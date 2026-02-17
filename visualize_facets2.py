@@ -98,24 +98,24 @@ def schlegel_2d(pts3, face_indices_list):
 
 
 def bfs_layout(qadj, n_orbits, bidims, orbits):
-    """Compute (col, row) positions via BFS from (3,0) orbit.
+    """Compute (col, row) positions via BFS from a (3,0) orbit.
 
-    Assigns top/middle/bottom rows based on which parent
-    each node was reached from.
+    Spreads each BFS layer evenly along the row axis,
+    sorted by average neighbor row in the previous layer.
     """
     from collections import deque
-    # Find the (3,0) orbit
-    start = None
+    starts = []
     for oid in range(n_orbits):
         rep = next(iter(orbits[oid]))
         if bidims[rep] == (3, 0):
-            start = oid
-            break
+            starts.append(oid)
     dist = [-1] * n_orbits
-    dist[start] = 0
-    q = deque([start])
+    q = deque()
     layers = defaultdict(list)
-    layers[0].append(start)
+    for s in starts:
+        dist[s] = 0
+        q.append(s)
+        layers[0].append(s)
     while q:
         u = q.popleft()
         for v in qadj.get(u, set()):
@@ -123,39 +123,20 @@ def bfs_layout(qadj, n_orbits, bidims, orbits):
                 dist[v] = dist[u] + 1
                 layers[dist[v]].append(v)
                 q.append(v)
-    # Assign rows: for 1-node layers, center (row=0).
-    # For 2-node layers: top(-1) and bottom(+1).
-    # For 3-node layers: assign based on connections
-    # to previous layer's top/bottom nodes.
     pos = {}
-    prev_top = None
-    prev_bot = None
     for col in sorted(layers.keys()):
         nodes = layers[col]
-        if len(nodes) == 1:
-            pos[nodes[0]] = (col, 0)
-            prev_top = prev_bot = nodes[0]
-        elif len(nodes) == 2:
-            # Assign arbitrarily, first=top
-            pos[nodes[0]] = (col, -1)
-            pos[nodes[1]] = (col, 1)
-            prev_top, prev_bot = nodes[0], nodes[1]
-        elif len(nodes) == 3:
-            top_n = bot_n = mid_n = None
-            for n in nodes:
+        k = len(nodes)
+        if col > 0 and k > 1:
+            def sort_key(n):
                 nbrs = qadj.get(n, set())
-                has_top = prev_top in nbrs
-                has_bot = prev_bot in nbrs
-                if has_top and not has_bot:
-                    top_n = n
-                elif has_bot and not has_top:
-                    bot_n = n
-                else:
-                    mid_n = n
-            pos[top_n] = (col, -1)
-            pos[bot_n] = (col, 1)
-            pos[mid_n] = (col, 0)
-            prev_top, prev_bot = top_n, bot_n
+                rows = [pos[m][1] for m in nbrs
+                        if m in pos]
+                return sum(rows) / len(rows) if rows else 0
+            nodes = sorted(nodes, key=sort_key)
+        for i, n in enumerate(nodes):
+            row = i - (k - 1) / 2
+            pos[n] = (col, row)
     return pos
 
 

@@ -50,16 +50,19 @@ import {
   CSS2DRenderer, CSS2DObject
 } from "three/addons/renderers/CSS2DRenderer.js";
 
-const PALETTE = {
-  A: 0xff4444, B: 0x44bb44, C: 0x4488ff,
-  D: 0xffaa00, E: 0xcc44ff, F: 0x00cccc,
-  G: 0xff77aa, H: 0x88dd00, I: 0xff8844,
-  J: 0x44ddff,
-};
-const PALETTE_CSS = {};
-for (const [k, v] of Object.entries(PALETTE)) {
-  PALETTE_CSS[k] =
-    "#" + v.toString(16).padStart(6, "0");
+const COLORS = [
+  0xff4444, 0x44bb44, 0x4488ff, 0xffaa00,
+  0xcc44ff, 0x00cccc, 0xff77aa, 0x88dd00,
+  0xff8844, 0x44ddff, 0xaaff44, 0xff44cc,
+  0x44ffaa, 0x8888ff, 0xffdd44, 0xdd4444,
+  0x44ffff, 0xbb44ff, 0xff9988, 0x88ffdd,
+];
+function palColor(lbl) {
+  const i = lbl.charCodeAt(0) - 65;
+  return COLORS[i % COLORS.length];
+}
+function palCSS(lbl) {
+  return "#" + palColor(lbl).toString(16).padStart(6, "0");
 }
 
 const box = document.getElementById("container");
@@ -155,7 +158,7 @@ async function loadFacets() {
 
     facet.faces.forEach((face, fi) => {
       const lbl = facet.face_labels[fi];
-      const col = PALETTE[lbl] || 0x888888;
+      const col = palColor(lbl);
       const idxs = triangulateFan(face);
       const pos = [];
       for (const idx of idxs) pos.push(...verts[idx]);
@@ -194,7 +197,7 @@ async function loadFacets() {
         div.textContent = lbl;
         div.style.cssText =
           "font-size:11px;font-weight:bold;" +
-          "color:" + PALETTE_CSS[lbl] +
+          "color:" + palCSS(lbl) +
           ";text-shadow:0 0 3px #000";
         const obj = new CSS2DObject(div);
         obj.position.set(c[0], c[1], c[2]);
