@@ -133,8 +133,10 @@ const spinGroups = [];
 const faceLabels = []; /* {obj, normal, spin} */
 
 async function loadFacets() {
-  const data = await fetch("./facets.json")
+  const json = await fetch("./facets.json")
     .then(r => r.json());
+  const data = json.orbits;
+  const edges = json.edges;
 
   /* Compute grid center from pos data */
   let minC = Infinity, maxC = -Infinity;
@@ -148,9 +150,13 @@ async function loadFacets() {
   const midC = (minC + maxC) / 2;
   const midR = (minR + maxR) / 2;
 
+  /* Map label -> screen position */
+  const labelPos = {};
+
   data.forEach((facet) => {
     const px = (facet.pos[0] - midC) * SPACEX;
     const py = -(facet.pos[1] - midR) * SPACEY;
+    labelPos[facet.label] = { x: px, y: py };
 
     const pivot = new THREE.Group();
     const spin = new THREE.Group();
@@ -237,6 +243,26 @@ async function loadFacets() {
     scene.add(pivot);
     spinGroups.push(spin);
   });
+
+  /* Draw quotient graph edges */
+  const R = 1.2; /* radius to stay outside shape */
+  const edgeMat = new THREE.LineBasicMaterial({
+    color: 0x556677, linewidth: 1,
+  });
+  for (const [a, b] of edges) {
+    const pa = labelPos[a], pb = labelPos[b];
+    if (!pa || !pb) continue;
+    const dx = pb.x - pa.x, dy = pb.y - pa.y;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    const ux = dx / len, uy = dy / len;
+    const pts = [
+      new THREE.Vector3(pa.x + ux * R, pa.y + uy * R, 0),
+      new THREE.Vector3(pb.x - ux * R, pb.y - uy * R, 0),
+    ];
+    const geom = new THREE.BufferGeometry()
+      .setFromPoints(pts);
+    scene.add(new THREE.Line(geom, edgeMat));
+  }
 
   /* Fit orthographic camera to layout */
   gridW = (maxC - minC) * SPACEX;

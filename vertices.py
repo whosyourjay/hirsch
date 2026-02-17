@@ -4,7 +4,7 @@ import numpy as np
 
 
 def make_qp():
-    return make_qp32()
+    return make_qp48()
 
 def make_qp48():
     """Q+ vertices from Santos's counterexample."""

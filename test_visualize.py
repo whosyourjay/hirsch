@@ -5,12 +5,17 @@ import pytest
 
 
 @pytest.fixture(scope="module")
-def facets_data():
+def facets_json():
     subprocess.run(
         ["python3", "visualize_facets2.py"], check=True
     )
     with open("facets.json") as f:
         return json.load(f)
+
+
+@pytest.fixture(scope="module")
+def facets_data(facets_json):
+    return facets_json["orbits"]
 
 
 def test_orbit_count(facets_data):
@@ -22,6 +27,14 @@ def test_labels_are_letters(facets_data):
     n = len(facets_data)
     expected = {chr(66 + i) for i in range(n)}  # B, C, ...
     assert labels == expected
+
+
+def test_edges_reference_valid_labels(facets_json):
+    valid = {d["label"] for d in facets_json["orbits"]}
+    for a, b in facets_json["edges"]:
+        assert a in valid and b in valid, (
+            f"Edge ({a}, {b}) references invalid label"
+        )
 
 
 def test_no_degenerate_flat_faces(facets_data):

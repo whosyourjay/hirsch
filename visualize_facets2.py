@@ -124,6 +124,7 @@ def bfs_layout(qadj, n_orbits, bidims, orbits):
                 layers[dist[v]].append(v)
                 q.append(v)
     pos = {}
+    bfs_order = []
     for col in sorted(layers.keys()):
         nodes = layers[col]
         k = len(nodes)
@@ -137,7 +138,8 @@ def bfs_layout(qadj, n_orbits, bidims, orbits):
         for i, n in enumerate(nodes):
             row = i - (k - 1) / 2
             pos[n] = (col, row)
-    return pos
+        bfs_order.extend(nodes)
+    return pos, bfs_order
 
 
 def match_face_to_neighbor(face_global, gid, adj, gverts, f2o):
@@ -158,6 +160,18 @@ def main():
         np.array([u + v for u in Qp for v in Qm]), axis=0
     )
     hull = ConvexHull(V)
+
+    # Normalized vertices for rounder 3D projections.
+    # Map each integer Minkowski vertex to normalized sum.
+    Qp_n = Qp / np.linalg.norm(Qp, axis=1, keepdims=True)
+    Qm_n = Qm / np.linalg.norm(Qm, axis=1, keepdims=True)
+    int_to_norm = {}
+    for u, un in zip(Qp, Qp_n):
+        for v, vn in zip(Qm, Qm_n):
+            key = tuple(u + v)
+            if key not in int_to_norm:
+                int_to_norm[key] = un + vn
+    V_norm = np.array([int_to_norm[tuple(row)] for row in V])
     s2g, n_facets = group_facets(hull)
     adj = build_dual_graph(hull, s2g)
     bidims = classify_facets(hull, s2g, n_facets, Qp, Qm)
@@ -165,28 +179,37 @@ def main():
     gvsets = group_vertex_sets(hull, s2g, V)
     orbits, f2o = compute_orbits(sigma, gvsets, n_facets)
     qadj, _edges = quotient_graph(adj, f2o, len(orbits))
-    layout = bfs_layout(
+    layout, bfs_order = bfs_layout(
         qadj, len(orbits), bidims, orbits
     )
+    # Map old orbit id -> BFS-order letter
+    oid_to_letter = {}
+    for rank, oid in enumerate(bfs_order):
+        oid_to_letter[oid] = LETTERS[rank]
 
     gverts = defaultdict(set)
     for i, simp in enumerate(hull.simplices):
         gverts[s2g[i]].update(simp)
 
     out = []
-    for oid, orb in enumerate(orbits):
+    for oid in bfs_order:
+        orb = orbits[oid]
         rep = next(iter(orb))
         vidx = sorted(gverts[rep])
         loc2glob = {loc: gl for loc, gl in enumerate(vidx)}
-        pts4 = V[vidx].astype(float)
-        pts3 = project_to_3d(pts4)
 
-        # Normalize to unit bounding box
+        # Face structure from integer coords (exact planes)
+        pts3_int = project_to_3d(V[vidx].astype(float))
+        span = pts3_int.max(axis=0) - pts3_int.min(axis=0)
+        scale = max(span) if max(span) > 0 else 1
+        pts3_int = pts3_int / scale
+        polys = facet_polygons(pts3_int)
+
+        # Normalized coords for display
+        pts3 = project_to_3d(V_norm[vidx])
         span = pts3.max(axis=0) - pts3.min(axis=0)
         scale = max(span) if max(span) > 0 else 1
         pts3 = pts3 / scale
-
-        polys = facet_polygons(pts3)
         faces = []
         face_labels = []
         for vs_local, _uv in polys:
@@ -194,13 +217,13 @@ def main():
             nbr_oid = match_face_to_neighbor(
                 vs_global, rep, adj, gverts, f2o
             )
-            lbl = LETTERS[nbr_oid] if nbr_oid is not None else "?"
+            lbl = (oid_to_letter[nbr_oid]
+                   if nbr_oid is not None else "?")
             faces.append([int(v) for v in vs_local])
             face_labels.append(lbl)
 
         # Schlegel diagram for flat view
-        face_idx_list = [f for f in faces]
-        pts2d = schlegel_2d(pts3, face_idx_list)
+        pts2d = schlegel_2d(pts3, faces)
         flat_faces = []
         for fi, vs_local in enumerate(faces):
             poly2d = pts2d[vs_local].tolist()
@@ -215,21 +238,27 @@ def main():
         bd = bidims[rep]
         col, row = layout[oid]
         out.append({
-            "label": LETTERS[oid],
+            "label": oid_to_letter[oid],
             "bidim": [int(bd[0]), int(bd[1])],
             "pos": [col, row],
             "vertices": [
-                [round(float(x), 5) for x in row]
-                for row in pts3
+                [round(float(x), 5) for x in r]
+                for r in pts3
             ],
             "faces": faces,
             "face_labels": face_labels,
             "flat_faces": flat_faces,
         })
 
+    edges = [
+        [oid_to_letter[a], oid_to_letter[b]]
+        for a, b in _edges
+    ]
+    result = {"orbits": out, "edges": edges}
     with open("facets.json", "w") as f:
-        json.dump(out, f, indent=2)
-    print(f"Wrote facets.json: {len(out)} orbits")
+        json.dump(result, f, indent=2)
+    print(f"Wrote facets.json: {len(out)} orbits, "
+          f"{len(edges)} edges")
 
 
 if __name__ == "__main__":
