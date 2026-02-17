@@ -51,10 +51,10 @@ import {
 } from "three/addons/renderers/CSS2DRenderer.js";
 
 const PALETTE = {
-  A: 0x4cc9f0, B: 0x4895ef, C: 0x4361ee,
-  D: 0x7209b7, E: 0xf72585, F: 0xffb703,
-  G: 0xfb8500, H: 0x06d6a0, I: 0xef476f,
-  J: 0x118ab2,
+  A: 0xff4444, B: 0x44bb44, C: 0x4488ff,
+  D: 0xffaa00, E: 0xcc44ff, F: 0x00cccc,
+  G: 0xff77aa, H: 0x88dd00, I: 0xff8844,
+  J: 0x44ddff,
 };
 const PALETTE_CSS = {};
 for (const [k, v] of Object.entries(PALETTE)) {
@@ -87,8 +87,8 @@ labelRenderer.domElement.style.top = "0";
 labelRenderer.domElement.style.pointerEvents = "none";
 box.appendChild(labelRenderer.domElement);
 
-scene.add(new THREE.AmbientLight(0xffffff, 0.5));
-const dLight = new THREE.DirectionalLight(0xffffff, 0.8);
+scene.add(new THREE.AmbientLight(0xffffff, 0.65));
+const dLight = new THREE.DirectionalLight(0xffffff, 0.7);
 dLight.position.set(5, 10, 7);
 scene.add(dLight);
 
@@ -111,8 +111,24 @@ function centroid3(pts, idxs) {
   return [x / n, y / n, z / n];
 }
 
+function faceNormal(pts, idxs) {
+  const a = new THREE.Vector3(...pts[idxs[0]]);
+  const b = new THREE.Vector3(...pts[idxs[1]]);
+  const c = new THREE.Vector3(...pts[idxs[2]]);
+  const ab = new THREE.Vector3().subVectors(b, a);
+  const ac = new THREE.Vector3().subVectors(c, a);
+  const n = new THREE.Vector3().crossVectors(ab, ac);
+  n.normalize();
+  /* Point outward (away from origin) */
+  const cen = centroid3(pts, idxs);
+  const cenV = new THREE.Vector3(...cen);
+  if (n.dot(cenV) < 0) n.negate();
+  return n;
+}
+
 /* ---- load and build ---- */
 const spinGroups = [];
+const faceLabels = []; /* {obj, normal, spin} */
 
 async function loadFacets() {
   const data = await fetch("./facets.json")
@@ -142,10 +158,8 @@ async function loadFacets() {
 
       const mat = new THREE.MeshStandardMaterial({
         color: col,
-        roughness: 0.4,
-        metalness: 0.05,
-        transparent: true,
-        opacity: 0.8,
+        roughness: 0.5,
+        metalness: 0.0,
         side: THREE.DoubleSide,
       });
       spin.add(new THREE.Mesh(geom, mat));
@@ -166,6 +180,7 @@ async function loadFacets() {
       /* Label (skip if same class) */
       if (lbl !== facet.label) {
         const c = centroid3(verts, face);
+        const n = faceNormal(verts, face);
         const div = document.createElement("div");
         div.textContent = lbl;
         div.style.cssText =
@@ -175,6 +190,7 @@ async function loadFacets() {
         const obj = new CSS2DObject(div);
         obj.position.set(c[0], c[1], c[2]);
         spin.add(obj);
+        faceLabels.push({ obj, normal: n, spin });
       }
     });
 
@@ -308,8 +324,18 @@ window.addEventListener("resize", () => {
   labelRenderer.setSize(w, h);
 });
 
+const _camDir = new THREE.Vector3();
+const _wn = new THREE.Vector3();
+const _wq = new THREE.Quaternion();
+
 (function animate() {
   requestAnimationFrame(animate);
+  camera.getWorldDirection(_camDir);
+  for (const fl of faceLabels) {
+    fl.spin.getWorldQuaternion(_wq);
+    _wn.copy(fl.normal).applyQuaternion(_wq);
+    fl.obj.visible = _wn.dot(_camDir) < 0;
+  }
   renderer.render(scene, camera);
   labelRenderer.render(scene, camera);
 })();

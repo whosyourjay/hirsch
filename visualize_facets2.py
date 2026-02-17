@@ -12,7 +12,7 @@ from quotient import (
     compute_orbits, quotient_graph,
 )
 
-LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+LETTERS = "BCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 
 def project_to_3d(pts):
