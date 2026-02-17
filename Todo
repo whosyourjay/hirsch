@@ -1,0 +1,6 @@
+0. use ThreeJs and make it 3d interactive
+1. Avoid writing np.int64 everywhere.
+2. Rename the classes to A, B, C, etc.
+3. Can you squash or stretch the drawing dimensions a bit so they are similar in size?
+4. Draw the 3d model with only labels on visible 2d faces. Do not draw a label if the neighbor is the same class.
+5. Draw a flattened version of the facet as well with all 2d faces labeled.
