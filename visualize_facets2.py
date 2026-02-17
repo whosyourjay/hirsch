@@ -97,6 +97,68 @@ def schlegel_2d(pts3, face_indices_list):
     return pts2d
 
 
+def bfs_layout(qadj, n_orbits, bidims, orbits):
+    """Compute (col, row) positions via BFS from (3,0) orbit.
+
+    Assigns top/middle/bottom rows based on which parent
+    each node was reached from.
+    """
+    from collections import deque
+    # Find the (3,0) orbit
+    start = None
+    for oid in range(n_orbits):
+        rep = next(iter(orbits[oid]))
+        if bidims[rep] == (3, 0):
+            start = oid
+            break
+    dist = [-1] * n_orbits
+    dist[start] = 0
+    q = deque([start])
+    layers = defaultdict(list)
+    layers[0].append(start)
+    while q:
+        u = q.popleft()
+        for v in qadj.get(u, set()):
+            if dist[v] == -1:
+                dist[v] = dist[u] + 1
+                layers[dist[v]].append(v)
+                q.append(v)
+    # Assign rows: for 1-node layers, center (row=0).
+    # For 2-node layers: top(-1) and bottom(+1).
+    # For 3-node layers: assign based on connections
+    # to previous layer's top/bottom nodes.
+    pos = {}
+    prev_top = None
+    prev_bot = None
+    for col in sorted(layers.keys()):
+        nodes = layers[col]
+        if len(nodes) == 1:
+            pos[nodes[0]] = (col, 0)
+            prev_top = prev_bot = nodes[0]
+        elif len(nodes) == 2:
+            # Assign arbitrarily, first=top
+            pos[nodes[0]] = (col, -1)
+            pos[nodes[1]] = (col, 1)
+            prev_top, prev_bot = nodes[0], nodes[1]
+        elif len(nodes) == 3:
+            top_n = bot_n = mid_n = None
+            for n in nodes:
+                nbrs = qadj.get(n, set())
+                has_top = prev_top in nbrs
+                has_bot = prev_bot in nbrs
+                if has_top and not has_bot:
+                    top_n = n
+                elif has_bot and not has_top:
+                    bot_n = n
+                else:
+                    mid_n = n
+            pos[top_n] = (col, -1)
+            pos[bot_n] = (col, 1)
+            pos[mid_n] = (col, 0)
+            prev_top, prev_bot = top_n, bot_n
+    return pos
+
+
 def match_face_to_neighbor(face_global, gid, adj, gverts, f2o):
     fset = set(face_global)
     best_g, best_n = None, 0
@@ -121,6 +183,10 @@ def main():
     sigma = make_sigma_plus()
     gvsets = group_vertex_sets(hull, s2g, V)
     orbits, f2o = compute_orbits(sigma, gvsets, n_facets)
+    qadj, _edges = quotient_graph(adj, f2o, len(orbits))
+    layout = bfs_layout(
+        qadj, len(orbits), bidims, orbits
+    )
 
     gverts = defaultdict(set)
     for i, simp in enumerate(hull.simplices):
@@ -166,9 +232,11 @@ def main():
             })
 
         bd = bidims[rep]
+        col, row = layout[oid]
         out.append({
             "label": LETTERS[oid],
             "bidim": [int(bd[0]), int(bd[1])],
+            "pos": [col, row],
             "vertices": [
                 [round(float(x), 5) for x in row]
                 for row in pts3

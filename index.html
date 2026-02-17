@@ -66,8 +66,7 @@ const box = document.getElementById("container");
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x1a1a2e);
 
-const COLS = 5, ROWS = 2;
-const SPACEX = 3.2, SPACEY = 3.8;
+const SPACEX = 3.5, SPACEY = 3.5;
 const camera = new THREE.OrthographicCamera(
   -1, 1, 1, -1, 0.1, 100
 );
@@ -134,11 +133,21 @@ async function loadFacets() {
   const data = await fetch("./facets.json")
     .then(r => r.json());
 
-  data.forEach((facet, idx) => {
-    const col = idx % COLS;
-    const row = Math.floor(idx / COLS);
-    const px = (col - (COLS - 1) / 2) * SPACEX;
-    const py = -((row - (ROWS - 1) / 2) * SPACEY);
+  /* Compute grid center from pos data */
+  let minC = Infinity, maxC = -Infinity;
+  let minR = Infinity, maxR = -Infinity;
+  for (const f of data) {
+    minC = Math.min(minC, f.pos[0]);
+    maxC = Math.max(maxC, f.pos[0]);
+    minR = Math.min(minR, f.pos[1]);
+    maxR = Math.max(maxR, f.pos[1]);
+  }
+  const midC = (minC + maxC) / 2;
+  const midR = (minR + maxR) / 2;
+
+  data.forEach((facet) => {
+    const px = (facet.pos[0] - midC) * SPACEX;
+    const py = -(facet.pos[1] - midR) * SPACEY;
 
     const pivot = new THREE.Group();
     const spin = new THREE.Group();
@@ -226,21 +235,10 @@ async function loadFacets() {
     spinGroups.push(spin);
   });
 
-  /* Fit orthographic camera to grid */
-  const totalW = COLS * SPACEX;
-  const totalH = ROWS * SPACEY + 1;
-  const aspect = box.clientWidth / box.clientHeight;
-  let halfH = totalH / 2 + 0.5;
-  let halfW = halfH * aspect;
-  if (halfW < totalW / 2 + 0.5) {
-    halfW = totalW / 2 + 0.5;
-    halfH = halfW / aspect;
-  }
-  camera.left = -halfW;
-  camera.right = halfW;
-  camera.top = halfH;
-  camera.bottom = -halfH;
-  camera.updateProjectionMatrix();
+  /* Fit orthographic camera to layout */
+  gridW = (maxC - minC) * SPACEX;
+  gridH = (maxR - minR) * SPACEY;
+  fitCamera();
 }
 
 loadFacets();
@@ -303,16 +301,16 @@ renderer.domElement.addEventListener(
   "pointerup", () => { activeSpin = null; }
 );
 
-window.addEventListener("resize", () => {
+let gridW = 5 * SPACEX, gridH = 3 * SPACEY;
+
+function fitCamera() {
   const w = box.clientWidth;
   const h = box.clientHeight;
-  const totalW = COLS * SPACEX;
-  const totalH = ROWS * SPACEY + 1;
   const aspect = w / h;
-  let halfH = totalH / 2 + 0.5;
+  let halfH = gridH / 2 + 1.5;
   let halfW = halfH * aspect;
-  if (halfW < totalW / 2 + 0.5) {
-    halfW = totalW / 2 + 0.5;
+  if (halfW < gridW / 2 + 1.5) {
+    halfW = gridW / 2 + 1.5;
     halfH = halfW / aspect;
   }
   camera.left = -halfW;
@@ -322,7 +320,9 @@ window.addEventListener("resize", () => {
   camera.updateProjectionMatrix();
   renderer.setSize(w, h);
   labelRenderer.setSize(w, h);
-});
+}
+
+window.addEventListener("resize", fitCamera);
 
 const _camDir = new THREE.Vector3();
 const _wn = new THREE.Vector3();

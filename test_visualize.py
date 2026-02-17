@@ -18,7 +18,7 @@ def test_orbit_count(facets_data):
 
 
 def test_labels_are_letters(facets_data):
-    expected = set("ABCDEFGHIJ")
+    expected = set("BCDEFGHIJK")
     labels = {d["label"] for d in facets_data}
     assert labels == expected
 
