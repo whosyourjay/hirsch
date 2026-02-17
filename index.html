@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Minkowski Facets</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: system-ui, sans-serif;
+  background: #1a1a2e;
+  color: #eee;
+}
+#container {
+  width: 100vw;
+  height: 100vh;
+  position: relative;
+}
+#info {
+  position: absolute;
+  top: 8px; left: 12px;
+  font-size: 13px;
+  z-index: 1;
+  pointer-events: none;
+}
+</style>
+</head>
+<body>
+
+<div id="container">
+  <div id="info">
+    Q<sup>+</sup> + Q<sup>-</sup> facets mod &Sigma;+
+    &mdash; drag to rotate camera
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three":
+      "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/":
+      "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from "three";
+import {
+  CSS2DRenderer, CSS2DObject
+} from "three/addons/renderers/CSS2DRenderer.js";
+
+const PALETTE = {
+  A: 0x4cc9f0, B: 0x4895ef, C: 0x4361ee,
+  D: 0x7209b7, E: 0xf72585, F: 0xffb703,
+  G: 0xfb8500, H: 0x06d6a0, I: 0xef476f,
+  J: 0x118ab2,
+};
+const PALETTE_CSS = {};
+for (const [k, v] of Object.entries(PALETTE)) {
+  PALETTE_CSS[k] =
+    "#" + v.toString(16).padStart(6, "0");
+}
+
+const box = document.getElementById("container");
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a1a2e);
+
+const COLS = 5, ROWS = 2;
+const SPACEX = 3.2, SPACEY = 3.8;
+const camera = new THREE.OrthographicCamera(
+  -1, 1, 1, -1, 0.1, 100
+);
+camera.position.set(0, 0, 20);
+camera.lookAt(0, 0, 0);
+
+const renderer = new THREE.WebGLRenderer({
+  antialias: true
+});
+renderer.setSize(box.clientWidth, box.clientHeight);
+box.appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(box.clientWidth, box.clientHeight);
+labelRenderer.domElement.style.position = "absolute";
+labelRenderer.domElement.style.top = "0";
+labelRenderer.domElement.style.pointerEvents = "none";
+box.appendChild(labelRenderer.domElement);
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+const dLight = new THREE.DirectionalLight(0xffffff, 0.8);
+dLight.position.set(5, 10, 7);
+scene.add(dLight);
+
+/* ---- helpers ---- */
+function triangulateFan(vs) {
+  const tris = [];
+  for (let i = 1; i + 1 < vs.length; i++)
+    tris.push(vs[0], vs[i], vs[i + 1]);
+  return tris;
+}
+
+function centroid3(pts, idxs) {
+  let x = 0, y = 0, z = 0;
+  for (const i of idxs) {
+    x += pts[i][0];
+    y += pts[i][1];
+    z += pts[i][2];
+  }
+  const n = idxs.length;
+  return [x / n, y / n, z / n];
+}
+
+/* ---- load and build ---- */
+const spinGroups = [];
+
+async function loadFacets() {
+  const data = await fetch("./facets.json")
+    .then(r => r.json());
+
+  data.forEach((facet, idx) => {
+    const col = idx % COLS;
+    const row = Math.floor(idx / COLS);
+    const px = (col - (COLS - 1) / 2) * SPACEX;
+    const py = -((row - (ROWS - 1) / 2) * SPACEY);
+
+    const pivot = new THREE.Group();
+    const spin = new THREE.Group();
+    const verts = facet.vertices;
+
+    facet.faces.forEach((face, fi) => {
+      const lbl = facet.face_labels[fi];
+      const col = PALETTE[lbl] || 0x888888;
+      const idxs = triangulateFan(face);
+      const pos = [];
+      for (const idx of idxs) pos.push(...verts[idx]);
+
+      const geom = new THREE.BufferGeometry();
+      geom.setAttribute("position",
+        new THREE.Float32BufferAttribute(pos, 3));
+      geom.computeVertexNormals();
+
+      const mat = new THREE.MeshStandardMaterial({
+        color: col,
+        roughness: 0.4,
+        metalness: 0.05,
+        transparent: true,
+        opacity: 0.8,
+        side: THREE.DoubleSide,
+      });
+      spin.add(new THREE.Mesh(geom, mat));
+
+      /* Edge outline */
+      const edgePts = face.map(
+        i => new THREE.Vector3(...verts[i])
+      );
+      edgePts.push(edgePts[0]);
+      const lg = new THREE.BufferGeometry()
+        .setFromPoints(edgePts);
+      spin.add(new THREE.Line(lg,
+        new THREE.LineBasicMaterial({
+          color: 0xffffff, linewidth: 1
+        })
+      ));
+
+      /* Label (skip if same class) */
+      if (lbl !== facet.label) {
+        const c = centroid3(verts, face);
+        const div = document.createElement("div");
+        div.textContent = lbl;
+        div.style.cssText =
+          "font-size:11px;font-weight:bold;" +
+          "color:" + PALETTE_CSS[lbl] +
+          ";text-shadow:0 0 3px #000";
+        const obj = new CSS2DObject(div);
+        obj.position.set(c[0], c[1], c[2]);
+        spin.add(obj);
+      }
+    });
+
+    /* Center the spin group at origin */
+    const b = new THREE.Box3().setFromObject(spin);
+    const center = new THREE.Vector3();
+    const size = new THREE.Vector3();
+    b.getCenter(center);
+    b.getSize(size);
+    spin.position.sub(center);
+
+    const sc = 1.8 / Math.max(
+      size.x, size.y, size.z
+    );
+    spin.scale.setScalar(sc);
+
+    pivot.add(spin);
+    pivot.position.set(px, py, 0);
+
+    /* Title below */
+    const bd = facet.bidim;
+    const td = document.createElement("div");
+    td.textContent =
+      `${facet.label} (${bd[0]},${bd[1]})`;
+    td.style.cssText =
+      "font-size:13px;font-weight:bold;" +
+      "color:#fff;text-shadow:0 0 4px #000";
+    const tobj = new CSS2DObject(td);
+    tobj.position.set(0, -1.4, 0);
+    pivot.add(tobj);
+
+    scene.add(pivot);
+    spinGroups.push(spin);
+  });
+
+  /* Fit orthographic camera to grid */
+  const totalW = COLS * SPACEX;
+  const totalH = ROWS * SPACEY + 1;
+  const aspect = box.clientWidth / box.clientHeight;
+  let halfH = totalH / 2 + 0.5;
+  let halfW = halfH * aspect;
+  if (halfW < totalW / 2 + 0.5) {
+    halfW = totalW / 2 + 0.5;
+    halfH = halfW / aspect;
+  }
+  camera.left = -halfW;
+  camera.right = halfW;
+  camera.top = halfH;
+  camera.bottom = -halfH;
+  camera.updateProjectionMatrix();
+}
+
+loadFacets();
+
+/* ---- Per-object drag rotation ---- */
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+let activeSpin = null;
+let dragStart = null;
+let startQuat = null;
+
+function getSpinGroup(event) {
+  mouse.x = (event.clientX / box.clientWidth) * 2 - 1;
+  mouse.y = -(event.clientY / box.clientHeight) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObjects(
+    scene.children, true
+  );
+  for (const hit of hits) {
+    let obj = hit.object;
+    while (obj.parent) {
+      if (spinGroups.includes(obj)) return obj;
+      obj = obj.parent;
+    }
+  }
+  return null;
+}
+
+renderer.domElement.addEventListener(
+  "pointerdown", (e) => {
+    const spin = getSpinGroup(e);
+    if (!spin) return;
+    activeSpin = spin;
+    dragStart = { x: e.clientX, y: e.clientY };
+    startQuat = spin.quaternion.clone();
+    renderer.domElement.setPointerCapture(e.pointerId);
+  }
+);
+
+renderer.domElement.addEventListener(
+  "pointermove", (e) => {
+    if (!activeSpin) return;
+    const dx = (e.clientX - dragStart.x) * 0.01;
+    const dy = (e.clientY - dragStart.y) * 0.01;
+    const qx = new THREE.Quaternion();
+    const qy = new THREE.Quaternion();
+    qy.setFromAxisAngle(
+      new THREE.Vector3(0, 1, 0), dx
+    );
+    qx.setFromAxisAngle(
+      new THREE.Vector3(1, 0, 0), dy
+    );
+    activeSpin.quaternion.copy(startQuat);
+    activeSpin.quaternion.premultiply(qy);
+    activeSpin.quaternion.premultiply(qx);
+  }
+);
+
+renderer.domElement.addEventListener(
+  "pointerup", () => { activeSpin = null; }
+);
+
+window.addEventListener("resize", () => {
+  const w = box.clientWidth;
+  const h = box.clientHeight;
+  const totalW = COLS * SPACEX;
+  const totalH = ROWS * SPACEY + 1;
+  const aspect = w / h;
+  let halfH = totalH / 2 + 0.5;
+  let halfW = halfH * aspect;
+  if (halfW < totalW / 2 + 0.5) {
+    halfW = totalW / 2 + 0.5;
+    halfH = halfW / aspect;
+  }
+  camera.left = -halfW;
+  camera.right = halfW;
+  camera.top = halfH;
+  camera.bottom = -halfH;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+  labelRenderer.setSize(w, h);
+});
+
+(function animate() {
+  requestAnimationFrame(animate);
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+})();
+</script>
+</body>
+</html>

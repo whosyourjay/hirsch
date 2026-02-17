@@ -12,6 +12,13 @@ from quotient import (
     compute_orbits, quotient_graph,
 )
 
+def is_front_facing(face_pts, view_dir):
+    # face normal via right-hand rule
+    n = np.cross(face_pts[1] - face_pts[0], face_pts[2] - face_pts[0])
+    return np.dot(n, view_dir) < 0  # front-facing toward camera
+
+def face_centroid(pts):
+    return np.mean(pts, axis=0)
 
 def facet_vertex_indices(hull, s2g):
     """Map each group to its set of vertex indices."""
@@ -87,7 +94,7 @@ def plot_facet(ax, pts_3d, faces, face_orbits, orbit_id, bd):
             poly, facecolor=fc, edgecolor=ec, linewidth=1.2
         )
         ax.add_collection3d(collection)
-        label = str(orb) if orb is not None else "?"
+        label = orbit_label(orb) if orb is not None else "?"
         ax.text(
             center[0], center[1], center[2], label,
             ha='center', va='center', fontsize=7,
@@ -101,17 +108,20 @@ def plot_facet(ax, pts_3d, faces, face_orbits, orbit_id, bd):
     ax.set_ylim(mid[1] - span, mid[1] + span)
     ax.set_zlim(mid[2] - span, mid[2] + span)
     ax.set_title(
-        f"Orbit {orbit_id}\nbidim {bd}",
+        f"Orbit {orbit_label(orbit_id)}\nbidim {bd}",
         fontsize=9
     )
     ax.set_axis_off()
 
+def orbit_label(i):
+    return chr(ord('A') + i)
 
 def main():
     Qp = make_qp()
     Qm = make_qm(Qp)
     V = np.unique(
-        np.array([u + v for u in Qp for v in Qm]), axis=0
+        np.array([u + v for u in Qp for v in Qm], dtype=float),
+        axis=0
     )
     hull = ConvexHull(V)
     s2g, n_facets = group_facets(hull)
@@ -129,7 +139,7 @@ def main():
 
     for oi, orb in enumerate(orbits):
         rep = next(iter(orb))
-        bd = bidims[rep]
+        bd = tuple(int(x) for x in bidims[rep])
         vidx = sorted(gverts[rep])
         pts_4d = V[vidx].astype(float)
         pts_3d = project_to_3d(pts_4d)
